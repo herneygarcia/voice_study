@@ -1,6 +1,11 @@
 (function initLectureDetail() {
+  const lectureId = new URLSearchParams(window.location.search).get("id");
+  if (!lectureId) {
+    window.location.href = "./index.html";
+    return;
+  }
+
   const root = document.querySelector(".lecture-detail");
-  const lectureId = root.dataset.lectureId;
 
   const titleInput = document.getElementById("detail-title");
   const metaEl = document.getElementById("detail-meta");

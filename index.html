@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1e3a8a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Voice Study" />
+  <title>Voice Study — Dashboard</title>
+  <link rel="stylesheet" href="./css/style.css" />
+  <link rel="manifest" href="./assets/manifest.json" />
+  <link rel="apple-touch-icon" href="./assets/icon-180.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./assets/icon-192.png" />
+</head>
+<body>
+  <nav class="topnav">
+    <a class="brand" href="./index.html">
+      <span class="brand-mark">◎</span> Voice Study
+    </a>
+    <div class="nav-right">
+      <a class="nav-cta" href="./record.html">+ New Lecture</a>
+      <button class="nav-settings-btn" data-action="open-settings" title="Settings" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0; margin-left: 16px;">⚙️</button>
+      <img src="./img/herney.jpg" alt="Herney" class="nav-avatar" />
+    </div>
+  </nav>
+  <main class="page">
+    <section class="hero">
+      <h1>Your lectures, understood.</h1>
+      <p>Record class, get a full transcript, then turn it into a summary, flashcards, or a podcast — in French, English, or Spanish.</p>
+      <a class="btn btn-primary btn-lg" href="./record.html">Start a new recording</a>
+    </section>
+
+    <section id="lecture-list" class="lecture-grid">
+      <div class="loading-row">Loading lectures…</div>
+    </section>
+
+    <template id="empty-state-template">
+      <div class="empty-state">
+        <div class="empty-illustration">◎</div>
+        <h2>No lectures yet</h2>
+        <p>Hit "New Lecture" and start recording your next class.</p>
+      </div>
+    </template>
+
+    <template id="lecture-card-template">
+      <a class="lecture-card" href="#">
+        <div class="lecture-card-top">
+          <span class="status-badge"></span>
+          <button class="delete-btn" title="Delete lecture" type="button">✕</button>
+        </div>
+        <h3 class="lecture-title"></h3>
+        <p class="lecture-date"></p>
+        <div class="artifact-icons">
+          <span class="artifact-icon" data-key="transcript" title="Transcript">📝</span>
+          <span class="artifact-icon" data-key="summary" title="Summary">✨</span>
+          <span class="artifact-icon" data-key="flashcards" title="Flashcards">🗂️</span>
+          <span class="artifact-icon" data-key="podcast" title="Podcast">🎙️</span>
+        </div>
+      </a>
+    </template>
+  </main>
+
+  <script src="./js/idb.js"></script>
+  <script src="./js/groq-client.js"></script>
+  <script src="./js/api.js"></script>
+  <script src="./js/settings.js"></script>
+  <script src="./js/dashboard.js"></script>
+  <script src="./js/sw-register.js"></script>
+</body>
+</html>

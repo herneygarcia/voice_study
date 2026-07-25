@@ -171,7 +171,7 @@
       } catch (err) {
         showErrorToast("Could not mark lecture as completed: " + err.message);
       }
-      window.location.href = `/lectures/${lectureId}`;
+      window.location.href = `./lecture.html?id=${lectureId}`;
     }
   }
 

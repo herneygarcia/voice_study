@@ -22,7 +22,7 @@
   for (const lecture of lectures) {
     const node = cardTemplate.content.cloneNode(true);
     const card = node.querySelector(".lecture-card");
-    card.href = `/lectures/${lecture.id}`;
+    card.href = `./lecture.html?id=${lecture.id}`;
 
     const badge = node.querySelector(".status-badge");
     badge.textContent = lecture.status === "recording" ? "Recording" : "Completed";

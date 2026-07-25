@@ -12,7 +12,22 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(gh repo *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(ipconfig getifaddr *)",
+      "Bash(brew list *)",
+      "Bash(brew install *)",
+      "Bash(ngrok version *)",
+      "Bash(ngrok config *)",
+      "Bash(ngrok http *)",
+      "Read(//tmp/**)",
+      "Bash(curl -s http://localhost:4040/api/tunnels)",
+      "Bash(pkill -f \"ngrok http\")",
+      "Bash(nohup ngrok http 8000 --log=stdout)",
+      "Bash(curl *)",
+      "Bash(git tag *)",
+      "Bash(convert -version)",
+      "Bash(inkscape --version)",
+      "Bash(python3 *)"
     ]
   }
 }
