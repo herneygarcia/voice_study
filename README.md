@@ -5,7 +5,8 @@ Record a lecture, get a live transcript (English, French, or Spanish), and turn 
 ## Setup
 
 ```bash
-cd /Users/herneygarcia/Downloads/voice_study
+git clone https://github.com/herneygarcia/voice_study.git
+cd voice_study
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
