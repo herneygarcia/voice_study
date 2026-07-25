@@ -6,7 +6,7 @@ const LLM_MODEL = "llama-3.3-70b-versatile";
 const TTS_MODEL = "canopylabs/orpheus-v1-english";
 const TTS_VOICE_HOST_A = "austin";
 const TTS_VOICE_HOST_B = "hannah";
-const MAX_TRANSCRIPT_CHARS = 60000;
+const MAX_TRANSCRIPT_CHARS = 150000;
 const GROQ_API_BASE = "https://api.groq.com/openai/v1";
 
 function getApiKey() {
@@ -200,6 +200,42 @@ async function generatePodcastScript(transcript, language = "auto") {
   });
 }
 
+async function readErrorDetail(res) {
+  let bodyText = "";
+  try {
+    bodyText = await res.text();
+  } catch (_) {
+    // ignore — body may already be consumed or unreadable
+  }
+
+  // Groq reports fixed daily/monthly quota exhaustion (as opposed to a transient
+  // per-minute rate limit) as a 429 whose *body* says "per day"/"TPD"/"RPD" and
+  // gives a wait time — there's no point retrying within this same generation
+  // run since the quota won't reset for minutes, not seconds.
+  const isDailyQuota = /\b(tokens|requests) per day\b|\bTPD\b|\bRPD\b/i.test(bodyText);
+  const waitMatch = bodyText.match(/try again in ([\dhms.]+)/i);
+  const suggestedWait = waitMatch ? waitMatch[1] : null;
+
+  const retryAfter = res.headers.get("retry-after");
+  const rateLimitBits = [];
+  if (retryAfter) rateLimitBits.push(`retry-after=${retryAfter}`);
+  for (const h of ["x-ratelimit-remaining-requests", "x-ratelimit-limit-requests", "x-ratelimit-reset-requests"]) {
+    const v = res.headers.get(h);
+    if (v) rateLimitBits.push(`${h}=${v}`);
+  }
+  const suffix = rateLimitBits.length ? ` [${rateLimitBits.join(", ")}]` : "";
+  const truncatedBody = bodyText.length > 300 ? bodyText.slice(0, 300) + "…" : bodyText;
+
+  let message;
+  if (isDailyQuota) {
+    message = `Groq's free-tier daily quota for TTS is exhausted${suggestedWait ? ` — try again in ${suggestedWait}` : ""}. (${truncatedBody})`;
+  } else {
+    message = `TTS synthesis failed: ${res.status}${truncatedBody ? ` — ${truncatedBody}` : ""}${suffix}`;
+  }
+
+  return { retryAfter, isDailyQuota, message };
+}
+
 async function synthesizeSegment(text, voice) {
   let lastError;
   const maxAttempts = 5;
@@ -232,31 +268,44 @@ async function synthesizeSegment(text, voice) {
         return res.arrayBuffer();
       }
 
-      if (res.status === 429) {
-        // Rate limited — wait and retry
-        console.warn(`TTS rate limited (429), retrying ${attempt + 1}/${maxAttempts}...`);
+      const { retryAfter, isDailyQuota, message } = await readErrorDetail(res);
+      lastError = new Error(message);
+
+      if (isDailyQuota) {
+        // A fixed daily/monthly quota won't clear within this generation run —
+        // retrying just burns time for a guaranteed repeat failure.
+        lastError.nonRetryable = true;
+        throw lastError;
+      }
+
+      if (res.status === 429 || res.status >= 500) {
+        // Transient per-minute rate limit or server error — wait and retry
+        console.warn(`${message} — retrying ${attempt + 1}/${maxAttempts}...`);
         if (attempt < maxAttempts - 1) {
-          await sleep(8000); // Safe margin above minimum 6s/request rate limit
+          const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : Math.min(30000, 4000 * Math.pow(2, attempt));
+          await sleep(waitMs);
         }
         continue;
       }
 
-      // Non-429 error — fail fast
-      throw new Error(`TTS synthesis failed: ${res.status}`);
+      // Non-retryable client error (400/401/403/404/...) — fail fast with the real reason
+      lastError.nonRetryable = true;
+      throw lastError;
     } catch (err) {
-      lastError = err;
+      if (err.nonRetryable) {
+        throw err;
+      }
       if (err.name === "AbortError") {
         // Timeout — retry
+        lastError = err;
         console.warn(`TTS request timed out, retrying...`);
         if (attempt < maxAttempts - 1) {
           await sleep(2000);
         }
         continue;
       }
-      if (err.message && err.message.includes("TTS synthesis failed")) {
-        throw err; // Genuine failure, stop retrying
-      }
       // Network error — retry
+      lastError = err;
       if (attempt < maxAttempts - 1) {
         await sleep(2000);
       }
@@ -435,8 +484,16 @@ async function generatePodcast(transcript, language = "auto", onProgress = null)
       await sleep(6000);
     }
 
-    const buffer = await synthesizeSegment(segment.text, voice);
-    audioBuffers.push(buffer);
+    try {
+      const buffer = await synthesizeSegment(segment.text, voice);
+      audioBuffers.push(buffer);
+    } catch (err) {
+      // Preserve the script + whatever audio already succeeded instead of discarding it —
+      // a failed segment shouldn't waste the segments (and quota) that already synthesized fine.
+      err.segments = segments;
+      err.partialAudioBuffers = audioBuffers;
+      throw err;
+    }
 
     if (onProgress) {
       onProgress(i + 1, segments.length);

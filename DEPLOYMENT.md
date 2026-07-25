@@ -122,3 +122,26 @@ For the demo/testing, free tier is plenty. If heavy daily use:
 - **TTS** (podcast voices): ~$0.003 per request
 
 Costs vary; check Groq's pricing page for current rates.
+
+## Troubleshooting: Podcast generation fails
+
+If "Generate Podcast" shows an error toast, the message now includes the actual
+HTTP status and error body returned by Groq for the TTS request (previously it
+only showed a generic "failed after max retries"). Open the browser console for
+the full detail. Common causes:
+- **Daily token quota (TPD) exhausted**: the free tier for
+  `canopylabs/orpheus-v1-english` has a small daily token budget (e.g. 3600
+  tokens/day). Once it's used up, every request 429s with a body mentioning
+  "tokens per day" until the quota resets — retrying sooner does not help. The
+  app now detects this and fails fast with the wait time Groq reports, instead
+  of burning through retries. Check https://console.groq.com/usage, or wait for
+  the window Groq specifies ("try again in Xm Ys"), or upgrade to a paid tier
+  for a larger quota.
+- **429 per-minute rate limit**: a transient burst limit — the app retries this
+  automatically with backoff.
+- **400/401/403/404**: a request-shape or auth/access problem (e.g. the account
+  isn't enabled for this model). The error body from Groq will say why.
+
+If audio synthesis fails but the script itself was generated successfully, the
+app still saves and displays the dialogue script with a note that narration
+audio is unavailable, instead of discarding everything.

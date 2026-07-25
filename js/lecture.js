@@ -193,12 +193,21 @@
         e.stopPropagation();
         const difficulty = btn.dataset.rating;
         const card = currentCards[currentCardIndex];
+
+        // Give immediate visual feedback that the click registered, and lock
+        // out the other options, before the card advances.
+        ratingBtns.forEach((b) => (b.disabled = true));
+        btn.classList.add("selected");
+
         try {
           await Api.rateFlashcard(lectureId, card.id, difficulty);
           card.difficulty = difficulty;
+          await new Promise((resolve) => setTimeout(resolve, 300));
           showCard(currentCardIndex + 1);
         } catch (err) {
           showErrorToast("Failed to rate card: " + err.message);
+          btn.classList.remove("selected");
+          ratingBtns.forEach((b) => (b.disabled = false));
         }
       });
     });
@@ -231,6 +240,10 @@
     flashcardNode.classList.remove("flipped");
     const ratingRow = flashcardNode.querySelector(".flashcard-rating-row");
     if (ratingRow) ratingRow.hidden = true;
+    flashcardNode.querySelectorAll(".flashcard-rating-btn").forEach((b) => {
+      b.classList.remove("selected");
+      b.disabled = false;
+    });
 
     const front = flashcardNode.querySelector(".flashcard-front");
     const answer = flashcardNode.querySelector(".flashcard-answer");
@@ -259,12 +272,22 @@
   });
 
   // ---- Podcast ----
-  function renderPodcast(podcast) {
+  function renderPodcast(podcast, audioErrorMessage = null) {
     podcastContent.innerHTML = "";
-    const audio = document.createElement("audio");
-    audio.controls = true;
-    audio.src = podcast.audio_url;
-    podcastContent.appendChild(audio);
+
+    if (podcast.audio_url) {
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = podcast.audio_url;
+      podcastContent.appendChild(audio);
+    } else {
+      const notice = document.createElement("p");
+      notice.className = "podcast-audio-unavailable";
+      notice.textContent = audioErrorMessage
+        ? `Audio narration unavailable: ${audioErrorMessage}`
+        : "Audio narration unavailable — script only.";
+      podcastContent.appendChild(notice);
+    }
 
     const scriptEl = document.createElement("div");
     scriptEl.className = "podcast-script";
@@ -289,7 +312,13 @@
       podcastBtn.textContent = "Regenerate Podcast";
       podcastProgressText.hidden = true;
     } catch (err) {
-      showErrorToast("Podcast generation failed: " + err.message);
+      if (err.audioFailed && err.segments) {
+        renderPodcast({ segments: err.segments, audio_url: null }, err.message);
+        podcastBtn.textContent = "Regenerate Podcast";
+        showErrorToast("Script generated, but audio narration failed: " + err.message);
+      } else {
+        showErrorToast("Podcast generation failed: " + err.message);
+      }
       podcastProgressText.hidden = true;
     } finally {
       podcastBtn.disabled = false;

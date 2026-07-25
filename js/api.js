@@ -241,7 +241,28 @@ Api.generatePodcast = async (lectureId, onProgress = null) => {
     throw new Error("No transcript available for podcast");
   }
 
-  const { segments, audioBlob, durationSeconds } = await generatePodcast(lecture.transcript, lecture.language, onProgress);
+  let segments, audioBlob, durationSeconds;
+  try {
+    ({ segments, audioBlob, durationSeconds } = await generatePodcast(lecture.transcript, lecture.language, onProgress));
+  } catch (err) {
+    if (err.segments) {
+      // Script generation succeeded even though audio synthesis ultimately failed —
+      // save the script so the user isn't left with nothing, and surface the real reason.
+      const podcast = {
+        lecture_id: lectureId_num,
+        segments: err.segments,
+        audio_blob: null,
+        duration_seconds: null,
+        created_at: new Date().toISOString(),
+      };
+      await put("podcasts", podcast);
+      const degraded = new Error(err.message);
+      degraded.audioFailed = true;
+      degraded.segments = err.segments;
+      throw degraded;
+    }
+    throw err;
+  }
 
   const podcast = {
     lecture_id: lectureId_num,
@@ -270,7 +291,7 @@ Api.getPodcast = async (lectureId) => {
 
   return {
     segments: podcast.segments,
-    audio_url: URL.createObjectURL(podcast.audio_blob),
+    audio_url: podcast.audio_blob ? URL.createObjectURL(podcast.audio_blob) : null,
     duration_seconds: podcast.duration_seconds,
   };
 };
