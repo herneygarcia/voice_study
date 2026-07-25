@@ -1,5 +1,6 @@
 // Service Worker for PWA offline support and app-shell caching
-const CACHE_VERSION = "voice-study-v1";
+// IMPORTANT: Bump CACHE_VERSION whenever app JS files change to ensure browsers pick up the new code
+const CACHE_VERSION = "voice-study-v2";
 const CACHE_ASSETS = [
   "./",
   "./index.html",
