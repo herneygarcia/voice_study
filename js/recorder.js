@@ -23,6 +23,8 @@
   let animationFrame = null;
   let mimeType = "audio/webm";
   let chunkIndex = 0;
+  let uploadChain = Promise.resolve(); // Sequential upload queue
+  let finalChunkPromise = null; // Resolves when the final chunk's onstop handler finishes
 
   for (const candidate of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]) {
     if (window.MediaRecorder && MediaRecorder.isTypeSupported(candidate)) {
@@ -99,10 +101,28 @@
     recorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) localChunks.push(e.data);
     };
-    recorder.onstop = async () => {
+    recorder.onstop = () => {
       const blob = new Blob(localChunks, { type: mimeType });
-      if (blob.size > 0) await uploadChunk(blob);
-      if (recording) recordNextChunk();
+
+      // Queue the upload to run in sequence (don't await it here)
+      if (blob.size > 0) {
+        uploadChain = uploadChain
+          .then(() => uploadChunk(blob))
+          .catch(() => {
+            // Error already shown by appendTranscriptWarning in uploadChunk
+          });
+      }
+
+      // Immediately start the next chunk without waiting for the upload to finish
+      if (recording) {
+        recordNextChunk();
+      } else {
+        // This is the final chunk (recording has been set to false by stopAndSave)
+        // Resolve the finalChunkPromise so stopAndSave knows we're done
+        if (finalChunkPromise && finalChunkPromise.resolve) {
+          finalChunkPromise.resolve();
+        }
+      }
     };
     recorder.start();
     setTimeout(() => {
@@ -155,7 +175,25 @@
 
   async function stopAndSave() {
     recording = false;
+
+    // Set up promise to wait for the final chunk's onstop handler
+    finalChunkPromise = {
+      promise: null,
+      resolve: null,
+    };
+    finalChunkPromise.promise = new Promise((resolve) => {
+      finalChunkPromise.resolve = resolve;
+    });
+
+    // Stop the current chunk (this will trigger onstop, which will see recording=false and resolve finalChunkPromise)
     if (recorder && recorder.state !== "inactive") recorder.stop();
+
+    // Wait for the final chunk's onstop handler to complete
+    await finalChunkPromise.promise;
+
+    // Wait for all pending uploads to finish before marking complete
+    await uploadChain;
+
     if (stream) stream.getTracks().forEach((t) => t.stop());
     if (audioCtx) audioCtx.close();
     if (timerInterval) clearInterval(timerInterval);
