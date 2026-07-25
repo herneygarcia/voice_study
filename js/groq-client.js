@@ -202,7 +202,7 @@ async function generatePodcastScript(transcript, language = "auto") {
 
 async function synthesizeSegment(text, voice) {
   let lastError;
-  const maxAttempts = 6;
+  const maxAttempts = 10;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -225,9 +225,16 @@ async function synthesizeSegment(text, voice) {
       }
 
       if (res.status === 429) {
-        // Rate limited — read retry-after header (seconds)
+        // Rate limited — TTS has 10 RPM limit (6 seconds per request minimum)
+        // Read retry-after header, or use conservative exponential backoff
         const retryAfter = res.headers.get("retry-after");
-        const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt) * 1000;
+        let waitMs;
+        if (retryAfter) {
+          waitMs = parseInt(retryAfter) * 1000;
+        } else {
+          // Exponential backoff: 6s, 12s, 24s, 48s, etc (minimum 6s for rate limit)
+          waitMs = Math.max(6000, Math.pow(2, attempt) * 3000);
+        }
         console.warn(`TTS rate limited (429), waiting ${waitMs}ms before retry ${attempt + 1}/${maxAttempts}`);
         await sleep(waitMs);
         continue;
@@ -241,9 +248,9 @@ async function synthesizeSegment(text, voice) {
         // Genuine failure, not transient — stop retrying
         throw err;
       }
-      // Network error or other transient issue — retry
+      // Network error or other transient issue — retry with shorter wait
       if (attempt < maxAttempts - 1) {
-        await sleep(1500);
+        await sleep(2000);
       }
     }
   }
