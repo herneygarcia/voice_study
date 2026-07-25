@@ -201,11 +201,8 @@ async function generatePodcastScript(transcript, language = "auto") {
 }
 
 async function synthesizeSegment(text, voice) {
-  // Respect global TTS rate limit (10 RPM)
-  await ttsRateLimiter.acquire();
-
   let lastError;
-  const maxAttempts = 10;
+  const maxAttempts = 5;
   const fetchTimeoutMs = 30000; // 30 second timeout per request
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -236,17 +233,11 @@ async function synthesizeSegment(text, voice) {
       }
 
       if (res.status === 429) {
-        // Rate limited — honor Retry-After header or use exponential backoff
-        const retryAfter = res.headers.get("retry-after");
-        let waitMs;
-        if (retryAfter) {
-          waitMs = parseInt(retryAfter) * 1000;
-        } else {
-          // Exponential backoff: 6s, 9s, 15s, 27s, etc (minimum 6s for the rate limit)
-          waitMs = Math.max(6000, Math.pow(2, attempt) * 3000);
+        // Rate limited — wait and retry
+        console.warn(`TTS rate limited (429), retrying ${attempt + 1}/${maxAttempts}...`);
+        if (attempt < maxAttempts - 1) {
+          await sleep(8000); // Safe margin above minimum 6s/request rate limit
         }
-        console.warn(`TTS rate limited (429), waiting ${waitMs}ms before retry ${attempt + 1}/${maxAttempts}`);
-        await sleep(waitMs);
         continue;
       }
 
@@ -255,18 +246,17 @@ async function synthesizeSegment(text, voice) {
     } catch (err) {
       lastError = err;
       if (err.name === "AbortError") {
-        // Timeout — treat as transient, retry with backoff
-        console.warn(`TTS request timed out (${fetchTimeoutMs}ms), retrying...`);
+        // Timeout — retry
+        console.warn(`TTS request timed out, retrying...`);
         if (attempt < maxAttempts - 1) {
-          await sleep(3000);
+          await sleep(2000);
         }
         continue;
       }
       if (err.message && err.message.includes("TTS synthesis failed")) {
-        // Genuine failure, not transient — stop retrying
-        throw err;
+        throw err; // Genuine failure, stop retrying
       }
-      // Network error or other transient issue — retry with conservative backoff
+      // Network error — retry
       if (attempt < maxAttempts - 1) {
         await sleep(2000);
       }
@@ -406,34 +396,6 @@ async function concatenateWavs(arrayBuffers) {
   return { blob: wavBlob, durationSeconds };
 }
 
-class RateLimiter {
-  constructor(maxRequests = 10, windowMs = 60000) {
-    this.maxRequests = maxRequests;
-    this.windowMs = windowMs;
-    this.requestTimes = [];
-  }
-
-  async acquire() {
-    while (true) {
-      const now = Date.now();
-      // Remove old requests outside the window
-      this.requestTimes = this.requestTimes.filter(time => now - time < this.windowMs);
-
-      if (this.requestTimes.length < this.maxRequests) {
-        this.requestTimes.push(Date.now());
-        return;
-      }
-
-      // Wait until the oldest request is outside the window
-      const oldestRequest = this.requestTimes[0];
-      const waitMs = (oldestRequest + this.windowMs) - now + 10; // +10ms for safety margin
-      await sleep(waitMs);
-    }
-  }
-}
-
-const ttsRateLimiter = new RateLimiter(10, 60000); // 10 requests per 60 seconds
-
 async function mapWithConcurrency(items, maxConcurrency, fn) {
   const results = [];
   const active = [];
@@ -462,17 +424,24 @@ async function generatePodcast(transcript, language = "auto", onProgress = null)
     throw new Error("Podcast script generation returned no segments");
   }
 
-  // Synthesize segments sequentially to respect 10 RPM rate limit reliably
-  let completedCount = 0;
-  const audioBuffers = await mapWithConcurrency(segments, 1, async (segment) => {
+  // Synthesize segments sequentially with 6s minimum spacing to respect 10 RPM rate limit
+  const audioBuffers = [];
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
     const voice = segment.speaker === "Host B" ? TTS_VOICE_HOST_B : TTS_VOICE_HOST_A;
-    const buffer = await synthesizeSegment(segment.text, voice);
-    completedCount++;
-    if (onProgress) {
-      onProgress(completedCount, segments.length);
+
+    // Wait before each request (except the first) to respect rate limit: 60s / 10 requests = 6s minimum
+    if (i > 0) {
+      await sleep(6000);
     }
-    return buffer;
-  });
+
+    const buffer = await synthesizeSegment(segment.text, voice);
+    audioBuffers.push(buffer);
+
+    if (onProgress) {
+      onProgress(i + 1, segments.length);
+    }
+  }
 
   const { blob: audioBlob, durationSeconds } = await concatenateWavs(audioBuffers);
 
