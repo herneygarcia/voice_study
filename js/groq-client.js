@@ -203,9 +203,14 @@ async function generatePodcastScript(transcript, language = "auto") {
 async function synthesizeSegment(text, voice) {
   let lastError;
   const maxAttempts = 10;
+  const fetchTimeoutMs = 30000; // 30 second timeout per request
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
+      // Wrap fetch with timeout
+      const controller = new AbortController();
+      const timeoutHandle = setTimeout(() => controller.abort(), fetchTimeoutMs);
+
       const res = await fetch(`${GROQ_API_BASE}/audio/speech`, {
         method: "POST",
         headers: {
@@ -218,7 +223,10 @@ async function synthesizeSegment(text, voice) {
           input: text,
           response_format: "wav",
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutHandle);
 
       if (res.ok) {
         return res.arrayBuffer();
@@ -244,6 +252,14 @@ async function synthesizeSegment(text, voice) {
       throw new Error(`TTS synthesis failed: ${res.status}`);
     } catch (err) {
       lastError = err;
+      if (err.name === "AbortError") {
+        // Timeout — treat as transient, retry with backoff
+        console.warn(`TTS request timed out (${fetchTimeoutMs}ms), retrying...`);
+        if (attempt < maxAttempts - 1) {
+          await sleep(3000);
+        }
+        continue;
+      }
       if (err.message && err.message.includes("TTS synthesis failed")) {
         // Genuine failure, not transient — stop retrying
         throw err;
