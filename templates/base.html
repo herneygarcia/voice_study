@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{% block title %}Voice Study{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <nav class="topnav">
+    <a class="brand" href="/">
+      <span class="brand-mark">◎</span> Voice Study
+    </a>
+    <div class="nav-right">
+      <a class="nav-cta" href="/record">+ New Lecture</a>
+      <img src="/static/img/herney.jpg" alt="Herney" class="nav-avatar" />
+    </div>
+  </nav>
+  <main class="page">
+    {% block content %}{% endblock %}
+  </main>
+  <script src="/static/js/api.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
