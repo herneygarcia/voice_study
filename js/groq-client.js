@@ -201,23 +201,54 @@ async function generatePodcastScript(transcript, language = "auto") {
 }
 
 async function synthesizeSegment(text, voice) {
-  return withRetry(async () => {
-    const res = await fetch(`${GROQ_API_BASE}/audio/speech`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${getApiKey()}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: TTS_MODEL,
-        voice,
-        input: text,
-        response_format: "wav",
-      }),
-    });
-    if (!res.ok) throw new Error(`TTS synthesis failed: ${res.status}`);
-    return res.arrayBuffer();
-  });
+  let lastError;
+  const maxAttempts = 6;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`${GROQ_API_BASE}/audio/speech`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${getApiKey()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: TTS_MODEL,
+          voice,
+          input: text,
+          response_format: "wav",
+        }),
+      });
+
+      if (res.ok) {
+        return res.arrayBuffer();
+      }
+
+      if (res.status === 429) {
+        // Rate limited — read retry-after header (seconds)
+        const retryAfter = res.headers.get("retry-after");
+        const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt) * 1000;
+        console.warn(`TTS rate limited (429), waiting ${waitMs}ms before retry ${attempt + 1}/${maxAttempts}`);
+        await sleep(waitMs);
+        continue;
+      }
+
+      // Non-429 error — fail fast
+      throw new Error(`TTS synthesis failed: ${res.status}`);
+    } catch (err) {
+      lastError = err;
+      if (err.message && err.message.includes("TTS synthesis failed")) {
+        // Genuine failure, not transient — stop retrying
+        throw err;
+      }
+      // Network error or other transient issue — retry
+      if (attempt < maxAttempts - 1) {
+        await sleep(1500);
+      }
+    }
+  }
+
+  throw lastError || new Error("TTS synthesis failed after max retries");
 }
 
 function parseWavHeader(arrayBuffer) {
@@ -372,16 +403,25 @@ async function mapWithConcurrency(items, maxConcurrency, fn) {
   return Promise.all(results);
 }
 
-async function generatePodcast(transcript, language = "auto") {
+async function generatePodcast(transcript, language = "auto", onProgress = null) {
   const segments = await generatePodcastScript(transcript, language);
   if (!segments || segments.length === 0) {
     throw new Error("Podcast script generation returned no segments");
   }
 
-  const audioBuffers = await mapWithConcurrency(segments, 4, async (segment) => {
+  // Synthesize segments sequentially (not concurrently) to respect rate limits
+  const audioBuffers = [];
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
     const voice = segment.speaker === "Host B" ? TTS_VOICE_HOST_B : TTS_VOICE_HOST_A;
-    return synthesizeSegment(segment.text, voice);
-  });
+
+    if (onProgress) {
+      onProgress(i + 1, segments.length);
+    }
+
+    const buffer = await synthesizeSegment(segment.text, voice);
+    audioBuffers.push(buffer);
+  }
 
   const { blob: audioBlob, durationSeconds } = await concatenateWavs(audioBuffers);
 

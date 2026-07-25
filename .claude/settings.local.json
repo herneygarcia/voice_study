@@ -27,7 +27,8 @@
       "Bash(git tag *)",
       "Bash(convert -version)",
       "Bash(inkscape --version)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(grep -E \"^-.*\\\\.\\(html|json|js\\)$|^d\")"
     ]
   }
 }

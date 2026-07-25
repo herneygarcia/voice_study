@@ -232,7 +232,7 @@ Api.rateFlashcard = async (lectureId, cardId, difficulty) => {
 };
 
 // Podcast
-Api.generatePodcast = async (lectureId) => {
+Api.generatePodcast = async (lectureId, onProgress = null) => {
   const lectureId_num = Number(lectureId);
   const lecture = await get("lectures", lectureId_num);
   if (!lecture) throw new Error("Lecture not found");
@@ -241,7 +241,7 @@ Api.generatePodcast = async (lectureId) => {
     throw new Error("No transcript available for podcast");
   }
 
-  const { segments, audioBlob, durationSeconds } = await generatePodcast(lecture.transcript, lecture.language);
+  const { segments, audioBlob, durationSeconds } = await generatePodcast(lecture.transcript, lecture.language, onProgress);
 
   const podcast = {
     lecture_id: lectureId_num,

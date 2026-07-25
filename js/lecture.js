@@ -23,6 +23,7 @@
 
   const podcastBtn = document.getElementById("generate-podcast-btn");
   const podcastLoading = document.getElementById("podcast-loading");
+  const podcastProgressText = document.getElementById("podcast-progress-text");
   const podcastContent = document.getElementById("podcast-content");
 
   let currentCards = [];
@@ -279,12 +280,17 @@
   podcastBtn.addEventListener("click", async () => {
     podcastBtn.disabled = true;
     podcastLoading.hidden = false;
+    podcastProgressText.hidden = false;
     try {
-      const result = await Api.generatePodcast(lectureId);
+      const result = await Api.generatePodcast(lectureId, (current, total) => {
+        podcastProgressText.textContent = `Synthesizing voice ${current} of ${total}… this can take a minute or two.`;
+      });
       renderPodcast(result);
       podcastBtn.textContent = "Regenerate Podcast";
+      podcastProgressText.hidden = true;
     } catch (err) {
       showErrorToast("Podcast generation failed: " + err.message);
+      podcastProgressText.hidden = true;
     } finally {
       podcastBtn.disabled = false;
       podcastLoading.hidden = true;
